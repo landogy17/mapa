@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Světelné znečištění ČR</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a2e;
+            color: white;
+        }
+
+        h1 {
+            text-align: center;
+            padding: 12px;
+            font-size: 1.2em;
+            background: #0f0f23;
+            letter-spacing: 1px;
+        }
+
+        #map {
+            width: 100%;
+            height: calc(100vh - 100px);
+        }
+
+        #controls {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 8px 20px;
+            background: #0f0f23;
+            font-size: 0.9em;
+        }
+
+        #controls label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #opacity-slider {
+            width: 150px;
+            cursor: pointer;
+        }
+
+        #opacity-value {
+            min-width: 35px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        .legend {
+            background: rgba(0,0,0,0.85);
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 0.78em;
+            line-height: 1.8;
+            border: 1px solid #444;
+        }
+
+        .legend h4 {
+            margin-bottom: 6px;
+            font-size: 0.85em;
+            color: #ffd700;
+            border-bottom: 1px solid #444;
+            padding-bottom: 4px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 2px 0;
+        }
+
+        .legend-color {
+            width: 18px;
+            height: 14px;
+            border-radius: 2px;
+            border: 1px solid rgba(255,255,255,0.3);
+            flex-shrink: 0;
+        }
+
+        .calibration-hint {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 165, 0, 0.9);
+            color: black;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            z-index: 1000;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🌙 UMĚLÝ JAS NOČNÍ OBLOHY NAD ČESKOU REPUBLIKOU</h1>
+
+    <div id="controls">
+        <label>
+            Průhlednost mapy:
+            <input type="range" id="opacity-slider" min="10" max="100" value="70" />
+            <span id="opacity-value">70%</span>
+        </label>
+        <span style="color: #aaa; font-size:0.85em;">
+            💡 Přibližuj kolečkem myši | Táhni mapu | Dvojklik = přiblížit
+        </span>
+    </div>
+
+    <div id="map"></div>
+    <div class="calibration-hint" id="cal-hint">📍 Kalibrace: klikni na bod a zjisti souřadnice</div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // ============================================================
+        // HLAVNÍ NASTAVENÍ — uprav souřadnice pokud obrázek nesedí
+        // ============================================================
+        const IMAGE_URL = 'mapa_svetelne_znecisteni.png'; // název tvého souboru
+
+        // Souřadnice rohů obrázku [latitude, longitude]
+        // Severozápadní roh (levý horní) a jihovýchodní roh (pravý dolní)
+        const IMAGE_BOUNDS = [
+            [51.08, 12.05],   // levý horní roh — SZ
+            [48.55, 18.87]    // pravý dolní roh — JV
+        ];
+
+        // Střed ČR pro počáteční zobrazení
+        const CZ_CENTER = [49.82, 15.47];
+        const INITIAL_ZOOM = 7;
+        // ============================================================
+
+        // Inicializace mapy
+        const map = L.map('map', {
+            center: CZ_CENTER,
+            zoom: INITIAL_ZOOM,
+            minZoom: 6,
+            maxZoom: 17
+        });
+
+        // Podkladová mapa OpenStreetMap
+        const osmLayer = L.tileLayer(
+            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            {
+                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> přispěvatelé',
+                maxZoom: 19,
+                opacity: 1.0
+            }
+        ).addTo(map);
+
+        // Overlay — tvůj obrázek světelného znečištění
+        const lightPollutionOverlay = L.imageOverlay(
+            IMAGE_URL,
+            IMAGE_BOUNDS,
+            {
+                opacity: 0.70,
+                interactive: false,
+                // Klíčové: mix-blend-mode pro lepší viditelnost podkladu
+                className: 'light-pollution-overlay'
+            }
+        ).addTo(map);
+
+        // CSS pro overlay — multiply zachovává barvy a prosvítá podklad
+        const style = document.createElement('style');
+        style.textContent = `
+            .light-pollution-overlay {
+                mix-blend-mode: multiply;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // ---- Ovládání průhlednosti ----
+        const slider = document.getElementById('opacity-slider');
+        const opacityValue = document.getElementById('opacity-value');
+
+        slider.addEventListener('input', function() {
+            const val = this.value / 100;
+            lightPollutionOverlay.setOpacity(val);
+            opacityValue.textContent = this.value + '%';
+        });
+
+        // ---- Legenda ----
+        const legend = L.control({ position: 'bottomleft' });
+
+        legend.onAdd = function() {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = `
+                <h4>Poměr k přírodnímu jasu</h4>
+                <div class="legend-item"><div class="legend-color" style="background:#000000"></div> &lt; 0,01</div>
+                <div class="legend-item"><div class="legend-color" style="background:#1a1a1a"></div> 0,01 – 0,02</div>
+                <div class="legend-item"><div class="legend-color" style="background:#555555"></div> 0,02 – 0,04</div>
+                <div class="legend-item"><div class="legend-color" style="background:#2244aa"></div> 0,04 – 0,08</div>
+                <div class="legend-item"><div class="legend-color" style="background:#3366dd"></div> 0,08 – 0,16</div>
+                <div class="legend-item"><div class="legend-color" style="background:#4488ff"></div> 0,16 – 0,32</div>
+                <div class="legend-item"><div class="legend-color" style="background:#228833"></div> 0,32 – 0,64</div>
+                <div class="legend-item"><div class="legend-color" style="background:#887744"></div> 0,64 – 1,28</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ccaa00"></div> 1,28 – 2,56</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ffdd00"></div> 2,56 – 5,12</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ff4400"></div> 5,12 – 10,2</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ff00aa"></div> 10,2 – 20,5</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ffaadd"></div> 20,5 – 41,0</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ffffff"></div> &gt; 41,0</div>
+                <hr style="margin:6px 0; border-color:#444">
+                <small style="color:#aaa">© LANDOGY 2025<br>
+                Zdroj: New World Atlas of Artificial Night Sky Brightness</small>
+            `;
+            return div;
+        };
+
+        legend.addTo(map);
+
+        // ---- Informační popup při kliknutí ----
+        // (užitečné pro kalibraci souřadnic)
+        map.on('click', function(e) {
+            const lat = e.latlng.lat.toFixed(5);
+            const lng = e.latlng.lng.toFixed(5);
+            console.log(`Kliknuto: [${lat}, ${lng}]`);
+            // Odkomentuj pro zobrazení souřadnic:
+            // L.popup().setLatLng(e.latlng).setContent(`📍 ${lat}, ${lng}`).openOn(map);
+        });
+
+        // ---- Tlačítko "Zpět na ČR" ----
+        const homeBtn = L.control({ position: 'topleft' });
+        homeBtn.onAdd = function() {
+            const btn = L.DomUtil.create('button');
+            btn.innerHTML = '🇨🇿';
+            btn.title = 'Zpět na celou ČR';
+            btn.style.cssText = `
+                background: white;
+                border: 2px solid rgba(0,0,0,0.3);
+                border-radius: 4px;
+                padding: 5px 8px;
+                font-size: 1.2em;
+                cursor: pointer;
+                display: block;
+                margin-top: 5px;
+            `;
+            btn.onclick = function() {
+                map.setView(CZ_CENTER, INITIAL_ZOOM);
+            };
+            L.DomEvent.disableClickPropagation(btn);
+            return btn;
+        };
+        homeBtn.addTo(map);
+
+    </script>
+</body>
+</html>
